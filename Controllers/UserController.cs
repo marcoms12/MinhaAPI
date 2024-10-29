@@ -4,7 +4,9 @@ using MinhaAPI.Data;
 using MinhaAPI.Models;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using System.Security.Cryptography;
 
 namespace MinhaAPI.Controllers
 {   //ROTAS
@@ -34,7 +36,7 @@ namespace MinhaAPI.Controllers
 
             if (user == null)
             {
-                return NotFound();
+                return NotFound( new {message = "Usuário não encontrado!" });
             }
 
             return user;
@@ -44,11 +46,20 @@ namespace MinhaAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(UserDto userDto)
         {
+            if (_context.Users.Any(u => u.Email == userDto.Email))
+            {
+                return BadRequest(new { message = "E-mail já está em uso." });
+            }
+
+            using var hmac = new HMACSHA512();
+
             var user = new User
             {
                 Name = userDto.Name,
                 Email = userDto.Email,
-                Password = userDto.Password
+                Password = userDto.Password,
+                PasswordSalt = Convert.ToBase64String(hmac.Key),  // Gerando o salt
+                PasswordHash = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(userDto.Password)))  // Gerando o hash da senha
             };
 
             _context.Users.Add(user);
@@ -56,6 +67,7 @@ namespace MinhaAPI.Controllers
 
             return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
         }
+
 
         // PUT: api/Users/5
         [HttpPut("{id}")]
@@ -65,7 +77,7 @@ namespace MinhaAPI.Controllers
             var user = await _context.Users.FindAsync(id);
             if (user == null)
             {
-                return NotFound();
+                return NotFound(new {message = "Este usuário não existe!"});
             }
 
             // Atualiza as propriedades do usuário com os dados do DTO
@@ -105,13 +117,13 @@ namespace MinhaAPI.Controllers
             var user = await _context.Users.FindAsync(id);
             if (user == null)
             {
-                return NotFound();
+                return NotFound("Usuário não encontrado para a exclusão!");
             }
 
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return Ok(new {message = "Usuário deletado!"});
         }
 
         private bool UserExists(int id)

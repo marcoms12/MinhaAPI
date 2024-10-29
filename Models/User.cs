@@ -31,6 +31,7 @@ namespace MinhaAPI.Models
 
         public DateTime? ResetPasswordTokenExpires { get; set; }
 
+        public string? PasswordSalt { get; set; }
 
 
         public User()
@@ -43,6 +44,10 @@ namespace MinhaAPI.Models
 
             
         }
+    }
+    public class ForgotPasswordRequest
+    {
+        public string Email { get; set; }
     }
 }
 

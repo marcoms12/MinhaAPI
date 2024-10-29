@@ -32,7 +32,8 @@ public class AuthController : ControllerBase
         {
             Name = request.Name,
             Email = request.Email,
-            PasswordHash = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(request.Password)))
+            PasswordHash = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(request.Password))),
+            PasswordSalt = Convert.ToBase64String(hmac.Key) // Armazene a chave
         };
 
         _context.Users.Add(user);
@@ -64,16 +65,17 @@ public class AuthController : ControllerBase
     //Geração de Token JWT
     private string CreateToken(User user)
     {
-        // Validações antes de criar claims
+        // Validações antes de criar as claims
         ValidateUserClaims(user);
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("your_jwt_secret_key_here"));
+        // chave de 64 caracteres ou mais para o HmacSha512
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("your-very-long-512-bit-secret-key-here-ensure-it-is-64-characters"));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
         var claims = new[]
         {
-            new Claim(ClaimTypes.Name, user.Name),
-            new Claim(ClaimTypes.Email, user.Email)
-        };
+        new Claim(ClaimTypes.Name, user.Name),
+        new Claim(ClaimTypes.Email, user.Email)
+    };
 
         var token = new JwtSecurityToken(
             claims: claims,
@@ -83,15 +85,16 @@ public class AuthController : ControllerBase
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+
     // Método de Login
     [HttpPost("login")]
     public async Task<IActionResult> Login(UserDto request)
     {
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email); // Alterado para Email
 
-        if (user == null) return BadRequest("User not found");
+        if (user == null) return BadRequest("Usuário não encontrado!");
 
-        using var hmac = new HMACSHA512();
+        using var hmac = new HMACSHA512(Convert.FromBase64String(user.PasswordSalt)); // Use o salt armazenado
         var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(request.Password));
 
         if (Convert.ToBase64String(computedHash) != user.PasswordHash)
@@ -99,14 +102,14 @@ public class AuthController : ControllerBase
 
         var token = CreateToken(user);
 
-        return Ok(new { token });
+        return Ok(new { message = "Usuário Logado com sucesso!" });
     }
 
     // Método de Recuperação de Senha
     [HttpPost("forgot-password")]
-    public async Task<IActionResult> ForgotPassword(string email)
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {   // Verifica se o usuário existe e valida a requisição de acordo com a resposta
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
         if (user == null) return BadRequest("Usuário não encontrado!");
         // Gera um token de redefinição de senha
         user.ResetPasswordToken = Guid.NewGuid().ToString();
@@ -116,7 +119,7 @@ public class AuthController : ControllerBase
         // Enviar email com token (usando MailKit, por exemplo)
         await SendEmail(user.Email, user.ResetPasswordToken);
 
-        return Ok("Verifique o seu Email e acesse o link de reset.");
+        return Ok("Verifique o seu Email e acesse o link para alterar a senha.");
     }
 
     private async Task SendEmail(string toEmail, string resetToken)
